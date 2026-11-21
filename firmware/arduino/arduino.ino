@@ -56,6 +56,11 @@ int readAccel() {
 }
 
 void loop() {
+
+  // ---------------------------------------------------------------------
+  // FSR sensor
+  int spectraValue = analogRead(Spectra_PIN);
+  s_data += String(spectraValue) + ", ";
   
   // ---------------------------------------------------------------------
   // FSR sensor
