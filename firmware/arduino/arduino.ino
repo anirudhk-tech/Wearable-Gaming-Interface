@@ -51,14 +51,16 @@ void setup() {
   Wire.endTransmission();
 }
 
-int readAccel() {
-  return (Wire.read() << 8) | Wire.read();
+int16_t readAccel() {
+  uint8_t highByte = Wire.read();
+  uint8_t lowByte = Wire.read();
+  return (int16_t)((highByte << 8) | lowByte);
 }
 
 void loop() {
 
   // ---------------------------------------------------------------------
-  // FSR sensor
+  // spectra sensor
   int spectraValue = analogRead(Spectra_PIN);
   s_data += String(spectraValue) + ", ";
   
@@ -66,7 +68,18 @@ void loop() {
   // FSR sensor
   int fsrValue = analogRead(FSR_PINS);
   s_data += String(fsrValue) + ", ";
+  
+  // ---------------------------------------------------------------------
+  // MPU sensor
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(0x3B);
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU_ADDR, 6);
+  s_data += String(readAccel()) + ", ";
+  s_data += String(readAccel()) + ", ";
+  s_data += String(readAccel()) + ", ";
 
+  
   // ---------------------------------------------------------------------
   // MPR121 sensor
   uint16_t chipTouched = cap.touched();   // bit s = electrode s
@@ -82,16 +95,6 @@ void loop() {
     }
     wasTouched[s] = touched;
   }
-  
-  // ---------------------------------------------------------------------
-  // MPU sensor
-  Wire.beginTransmission(MPU_ADDR);
-  Wire.write(0x3B);
-  Wire.endTransmission(false);
-  Wire.requestFrom(MPU_ADDR, 6);
-  s_data += String(readAccel()) + ", ";
-  s_data += String(readAccel()) + ", ";
-  s_data += String(readAccel());
 /**/
   // ---------------------------------------------------------------------
   Serial.println(s_data);

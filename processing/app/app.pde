@@ -1,22 +1,163 @@
-import processing.serial.*;
 
-Serial port;
-float value = 0;
+String[] labels = {"GAME1", "GAME2", "PAINT", "GAME3"};
+int selected = 0;
+
+final int w1 = 0;
+final int w2 = 1;
+final int w3 = 2;
+final int w4 = 3;
+final int w5 = 4;
+
+int activeWindow = 0;
+int prevMove = 0;
+
 
 void setup() {
-  size(800, 600);
-  println(Serial.list());
-  // port = new Serial(this, Serial.list()[0], 115200);
-  // port.bufferUntil('\n');
+  size(1500, 850);
+  setupSerial();
+  
+    
 }
 
 void draw() {
-  background(255);
-  fill(0);
-  text("value: " + value, 20, 30);
+  if(activeWindow == 0){
+    background(255);
+    
+    fill(0);
+    textAlign(LEFT, TOP);
+    textSize(32);
+    text("HOMEPAGE", 120, 30);
+    stroke(0);
+    strokeWeight(2);
+    line(40, 70, 210, 70);
+    
+    textAlign(CENTER, CENTER);
+    textSize(24);
+    int boxW = 300;
+    int boxH = 250;
+    int startX = 50;
+    int startY = 160;
+    int gapX = 350;
+    int gapY = 300;
+    
+    for (int i = 0; i < labels.length; i++) {
+      int col = i % 4;
+      int row = i / 4;
+      
+      int x = startX + col * gapX;
+      int y = startY + row * gapY;
+      
+      if (i == selected) {
+        strokeWeight(6);
+      } else {
+        strokeWeight(2);
+      }
+      
+      fill(255);
+      rect(x, y, boxW, boxH, 10);
+      fill(0);
+      text(labels[i], x + boxW / 2, y + boxH / 2);
+    }
+    
+    // --------------------------------------------------------------------------------------------
+    
+    if (!calibrated) {
+      text("Hold head still... " + sampleCount + "/" + TOTAL_SAMPLES, width / 2, height / 15);
+    } else {
+      text("Direction Code: " + currentDirection, width / 2, height / 15 - 20);
+      textSize(16);
+      fill(180);
+      text("diffY: " + nf(diffY, 0, 0) + "  |  diffZ: " + nf(diffZ, 0, 0), width / 2, height / 15 + 10);
+      text("Press 'C' to recalibrate baseline", width / 2, height - 30);
+      textSize(28);
+    }
+    
+    if(millis() - prevMove > 1000){
+      
+      if (currentDirection == RIGHT) {
+        selected = (selected + 1) % labels.length;
+        prevMove = millis();
+      } else if (currentDirection == LEFT) {
+        selected = (selected - 1 + labels.length) % labels.length;
+        prevMove = millis();
+      }
+    }
+    
+    println("home: fsr: " + fsr);
+    if(fsr > 200){
+      activeWindow = selected+1;
+    }
+    
+  }else if(activeWindow == 1){ // GAME 1
+    
+    background(255);
+    
+    fill(0);
+    textAlign(LEFT, TOP);
+    textSize(32);
+    text("Game 1", 120, 30);
+    stroke(0);
+    strokeWeight(2);
+    line(40, 70, 210, 70);
+    
+  }else if(activeWindow == 2){ // GAME 2
+    
+    background(255);
+    
+    fill(0);
+    textAlign(LEFT, TOP);
+    textSize(32);
+    text("Game 2", 120, 30);
+    stroke(0);
+    strokeWeight(2);
+    line(40, 70, 210, 70);
+    
+  }else if(activeWindow == 3){ // PAINT
+    
+    background(255);
+    
+    fill(0);
+    textAlign(LEFT, TOP);
+    textSize(32);
+    text("Paint", 120, 30);
+    stroke(0);
+    strokeWeight(2);
+    line(40, 70, 210, 70);
+    
+  }else if(activeWindow == 4){ // GAME 4
+    
+    background(255);
+    
+    fill(0);
+    textAlign(LEFT, TOP);
+    textSize(32);
+    text("Game 3", 120, 30);
+    stroke(0);
+    strokeWeight(2);
+    line(40, 70, 210, 70);
+    
+  }
 }
 
-void serialEvent(Serial p) {
-  String line = p.readStringUntil('\n');
-  if (line != null) value = float(trim(line));
+// temporary keyboard controls
+void keyPressed() {
+  if(activeWindow == 0){
+    if (keyCode == RIGHT) {
+      selected = (selected + 1) % labels.length;
+    } else if (keyCode == LEFT) {
+      selected = (selected - 1 + labels.length) % labels.length;
+    }
+  }else{
+    if (key == 'h' || key == 'H') {
+      activeWindow = 0;
+    }
+  }
+  
+  if (key == 'c' || key == 'C') {
+    calibrated = false;
+    sampleCount = 0;
+    sumY = 0;
+    sumZ = 0;
+    currentDirection = NEUTRAL;
+  }
 }
