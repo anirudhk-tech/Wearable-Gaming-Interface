@@ -1,207 +1,235 @@
-// F1 PIXEL ARCADE - same games as final/, new graphics only.
-// Input is the wearable's, read exactly like app/ (serial.pde + direction.pde):
-//   head tilt (LEFT/RIGHT/UP/DOWN)  -> menu selection / game steering
-//   FSR press (> 200)               -> open selected game (home), hold 1.5s to exit
-int game = 0;
+// F1 ARCADE - red/black/white. 1 or 2 players, each with their own wearable.
+// Input is read exactly like app/ (serial.pde + direction.pde):
+//   head tilt  -> menu selection / game steering      FSR > 200 -> select; hold 1.5s -> exit
+final int W = 1400, H = 800;     // logical canvas, scaled to fill the screen
 String[] names = {"Snake", "Catch", "Flappy"};
-String[] tags  = {"PIT LANE RUN", "TYRE CATCH", "BARRIER DASH"};
-String[] hints = {"TILT  U D L R", "TILT  L / R", "TILT  UP = FLAP"};
-int[] best = new int[3];
+String[] hints = {"TILT U D L R", "TILT L / R", "TILT UP = FLAP"};
 
-int mx = 100, my = 100, mw = 600, mh = 400;
-
-// same names/logic as app.pde home page
+int mode = 0;          // 0 = 1 player, 1 = 2 player
+int focusRow = 1;      // 0 = mode row, 1 = game row
 int selected = 0;
+int game = 0;          // 0 = home, 1..3
 int prevMove = 0;
+Game[] play = new Game[2];
 
-// extra input plumbing (no keyboard)
-boolean fsrLock = false;     // FSR must be released before it counts again
-int fsrHeld = 0;             // millis when in-game press began (0 = none)
-int lastDirSent = 0;   // 0 = NEUTRAL
-int lastCtl = 0;
+boolean fsrLock = false;
+int fsrHeld = 0;
+int[] lastDirSent = {0, 0};   // 0 = NEUTRAL
+int[] lastCtl = {0, 0};
 final int EXIT_HOLD_MS = 1500;
 
 void setup() {
-  size(800, 600);
+  fullScreen();
   noSmooth();
   initTheme();
   setupSerial();
 }
 
-// only keyboard left is app.pde's 'C' recalibrate
 void keyPressed() {
-  if (key == 'c' || key == 'C') {
-    calibrated = false;
-    sampleCount = 0;
-    sumY = 0;
-    sumZ = 0;
-    currentDirection = NEUTRAL;
-  }
+  if (key == 'c' || key == 'C') for (int i = 0; i < 2; i++) sensors[i].recalibrate();
+}
+
+int players() { return mode + 1; }
+
+boolean ready() {
+  for (int i = 0; i < players(); i++) if (!sensors[i].calibrated) return false;
+  return true;
 }
 
 void startGame(int g) {
   game = g;
-  if (g == 1) snakeStart();
-  if (g == 2) catchStart();
-  if (g == 3) flappyStart();
+  for (int i = 0; i < players(); i++) {
+    if (g == 1) play[i] = new SnakeG(i);
+    if (g == 2) play[i] = new CatchG(i);
+    if (g == 3) play[i] = new FlappyG(i);
+    lastDirSent[i] = 0;
+  }
   fsrLock = true;
   fsrHeld = 0;
 }
 
-// head direction -> the exact inputs the games already understand
-void gameControls() {
-  if (!calibrated) return;
-  char k = 0;
-  if (currentDirection == RIGHT) k = 'd';
-  else if (currentDirection == LEFT) k = 'a';
-  else if (currentDirection == UP) k = 'w';
-  else if (currentDirection == DOWN) k = 's';
-  if (k == 0) { lastDirSent = NEUTRAL; return; }
-
-  int gap = (game == 2) ? 180 : (game == 3) ? 350 : 0;
-  if (currentDirection != lastDirSent || millis() - lastCtl > gap) {
-    lastDirSent = currentDirection;
-    lastCtl = millis();
-    if (game == 1) snakeKey(k);
-    else if (game == 2) catchKey(k);
-    else if (game == 3) flappyKey(k);
-  }
-}
-
 void homeControls() {
-  // identical to app.pde home page
-  if (millis() - prevMove > 1000) {
-    if (currentDirection == RIGHT) {
-      selected = (selected + 1) % names.length;
-      prevMove = millis();
-    } else if (currentDirection == LEFT) {
-      selected = (selected - 1 + names.length) % names.length;
+  Sensor s = sensors[0];
+  if (millis() - prevMove > 1000 && s.calibrated) {
+    int d = s.currentDirection;
+    if (d == UP)   { focusRow = 0; prevMove = millis(); }
+    if (d == DOWN) { focusRow = 1; prevMove = millis(); }
+    if (d == RIGHT || d == LEFT) {
+      int step = (d == RIGHT) ? 1 : -1;
+      if (focusRow == 0) mode = (mode + step + 2) % 2;
+      else selected = (selected + step + names.length) % names.length;
       prevMove = millis();
     }
   }
-  if (fsr <= 200) fsrLock = false;
-  if (fsr > 200 && !fsrLock) startGame(selected + 1);
+  if (s.fsr <= 200) fsrLock = false;
+  if (s.fsr > 200 && !fsrLock && focusRow == 1 && ready()) startGame(selected + 1);
 }
 
-void inGameFsr() {
-  if (fsr <= 200) { fsrLock = false; fsrHeld = 0; return; }
-  if (fsrLock) return;
-  if (fsrHeld == 0) fsrHeld = millis();
-  if (millis() - fsrHeld > EXIT_HOLD_MS) {
-    game = 0;
-    fsrLock = true;
-    fsrHeld = 0;
+void gameControls() {
+  boolean any = false;
+  for (int i = 0; i < players(); i++) if (sensors[i].fsr > 200) any = true;
+  if (!any) { fsrLock = false; fsrHeld = 0; }
+  else if (!fsrLock) {
+    if (fsrHeld == 0) fsrHeld = millis();
+    if (millis() - fsrHeld > EXIT_HOLD_MS) { game = 0; fsrLock = true; fsrHeld = 0; return; }
+  }
+
+  for (int i = 0; i < players(); i++) {
+    Sensor s = sensors[i];
+    if (!s.calibrated) continue;
+    char k = 0;
+    if (s.currentDirection == RIGHT) k = 'd';
+    else if (s.currentDirection == LEFT) k = 'a';
+    else if (s.currentDirection == UP) k = 'w';
+    else if (s.currentDirection == DOWN) k = 's';
+    if (k == 0) { lastDirSent[i] = 0; continue; }
+    int gap = (game == 2) ? 180 : (game == 3) ? 350 : 0;
+    if (s.currentDirection != lastDirSent[i] || millis() - lastCtl[i] > gap) {
+      lastDirSent[i] = s.currentDirection;
+      lastCtl[i] = millis();
+      play[i].key(k);
+    }
   }
 }
 
 void draw() {
   background(BG);
-  if (game == 0) homeControls();
-  else { inGameFsr(); gameControls(); }
-  drawMain();
+  float sc = min(width / (float) W, height / (float) H);
+  translate((width - W * sc) / 2, (height - H * sc) / 2);
+  scale(sc);
 
-  if (game > 0) {
-    noStroke();
-    fill(0, 0, 0, 190);
-    rect(0, 0, width, height);
-
-    // modal frame: kerb border + header bar
-    kerbFrame(mx - 8, my - 40, mw + 16, mh + 48);
-    fill(PANEL);
-    rect(mx - 2, my - 34, mw + 4, 28);
-    fill(RED);
-    rect(mx - 2, my - 34, 6, 28);
-    pxText(names[game - 1].toUpperCase() + "  " + tags[game - 1], mx + 14, my - 28, 16, WHITE);
-    pxTextR("HOLD SQUEEZE = PIT", mx + mw - 6, my - 28, 14, GREY);
-    if (fsrHeld > 0) {
-      fill(YEL);
-      rect(mx - 2, my - 8, (mw + 4) * constrain((millis() - fsrHeld) / (float) EXIT_HOLD_MS, 0, 1), 4);
-    }
-
-    pushMatrix();
-    translate(mx, my);
-    clip(mx, my, mw, mh);
-    if (game == 1) snakeDraw();
-    if (game == 2) catchDraw();
-    if (game == 3) flappyDraw();
-    noClip();
-    popMatrix();
-  }
+  if (game == 0) { homeControls(); drawHome(); }
+  else { gameControls(); drawGame(); }
 }
 
-void drawMain() {
-  // top kerb + checkered strip
-  kerbH(0, 0, width, 10);
-  checker(0, 570, width, 30, 10, WHITE, BLACKPX);
-
-  // header
-  pxText("F1 ARCADE", 40, 36, 44, WHITE);
-  pxText("WEARABLE GAMING INTERFACE", 42, 88, 14, TEAL);
-  sprite(CAR, 330, 44, 4);
-
-  // start lights (decorative)
-  int lit = (frameCount / 25) % 7;
-  for (int i = 0; i < 5; i++) {
-    int lx = 600 + i * 34;
-    boolean on = lit > i && lit < 6;
-    fill(on ? RED : #2A1216);
-    rect(lx, 36, 24, 24);
-    if (on) { fill(#FF6A5E); rect(lx + 4, 40, 8, 8); }
+// ------------------------------------------------------------ game screen
+void drawGame() {
+  kerbH(0, 0, W, 10);
+  checker(0, H - 20, W, 20, 10, WHITE, BG);
+  pxText(names[game - 1].toUpperCase() + "  " + (players() == 1 ? "1 PLAYER" : "2 PLAYER"), 60, 34, 32, WHITE);
+  pxTextR("HOLD SQUEEZE = EXIT", W - 60, 44, 16, GREY);
+  if (fsrHeld > 0) {
+    fill(RED);
+    noStroke();
+    rect(60, 80, (W - 120) * constrain((millis() - fsrHeld) / (float) EXIT_HOLD_MS, 0, 1), 6);
   }
-  pxText("LIGHTS OUT", 600, 70, 12, GREY);
 
-  // cards
-  for (int i = 0; i < 3; i++) {
-    int x = 40 + i * 250;
-    int y = 140;
-    int cw = 220, ch = 380;
-    card(x, y, cw, ch, i);
+  if (players() == 1) panel(0, 220, 110, 1.6);
+  else { panel(0, 70, 220, 1.0); panel(1, 730, 220, 1.0); }
+}
+
+void panel(int pi, float x, float y, float sc) {
+  pushMatrix();
+  translate(x, y);
+  scale(sc);
+  if (pi == 0 || players() == 2) pxText("P" + (pi + 1), 0, -34, 26, RED);
+  if (players() == 2 && !sensors[pi].calibrated) pxText("CALIBRATING " + sensors[pi].sampleCount + "/" + TOTAL_SAMPLES, 60, -30, 16, GREY);
+  play[pi].draw();
+  // mask pipe overhang, then frame
+  noStroke();
+  fill(BG);
+  rect(-120, -10, 120, GH + 20);
+  rect(GW, -10, 120, GH + 20);
+  kerbFrameLines();
+  popMatrix();
+}
+
+void kerbFrameLines() {
+  noFill();
+  stroke(WHITE);
+  strokeWeight(3);
+  rect(0, 0, GW, GH);
+  noStroke();
+}
+
+// ------------------------------------------------------------ home screen
+void drawHome() {
+  kerbH(0, 0, W, 10);
+  checker(0, H - 20, W, 20, 10, WHITE, BG);
+
+  pxText("F1 ARCADE", 60, 40, 64, WHITE);
+  fill(RED);
+  noStroke();
+  rect(60, 116, 200, 6);
+
+  // sensor status
+  for (int i = 0; i < 2; i++) {
+    Sensor s = sensors[i];
+    String st = !s.connected ? "NO SENSOR" : (!s.calibrated ? "HOLD STILL " + s.sampleCount + "/" + TOTAL_SAMPLES : "READY");
+    boolean needed = i < players();
+    fill(needed ? PANEL2 : PANEL);
+    rect(W - 380, 40 + i * 44, 320, 36);
+    fill(s.calibrated ? RED : PANEL);
+    rect(W - 380, 40 + i * 44, 8, 36);
+    pxText("P" + (i + 1) + "  " + st, W - 360, 47 + i * 44, 16, needed ? WHITE : GREY);
   }
-  if (!calibrated) {
-    fill(0, 200);
-    rect(0, 250, width, 100);
-    kerbH(0, 250, width, 6);
-    kerbH(0, 344, width, 6);
-    pxTextC("HOLD HEAD STILL... " + sampleCount + "/" + TOTAL_SAMPLES, width / 2, 280, 28, YEL);
-    pxTextC("CALIBRATING SENSOR", width / 2, 318, 14, WHITE);
+
+  // mode switch
+  String[] ml = {"1 PLAYER", "2 PLAYER"};
+  for (int i = 0; i < 2; i++) {
+    int x = 60 + i * 340, y = 160;
+    boolean on = (i == mode);
+    if (focusRow == 0) { fill(WHITE); rect(x - 4, y - 4, 328, 78); }
+    fill(on ? RED : PANEL2);
+    rect(x, y, 320, 70);
+    pxTextC(ml[i], x + 160, y + 20, 30, on ? WHITE : GREY);
+  }
+  pxText(focusRow == 0 ? "TILT L/R = SWITCH   TILT DOWN = GAMES" : "TILT UP = MODE   TILT L/R = PICK   SQUEEZE = PLAY", 60, 250, 16, GREY);
+
+  // games
+  for (int i = 0; i < 3; i++) card(60 + i * 440, 300, 400, 420, i);
+
+  if (!ready()) {
+    pxText("CALIBRATING... HOLD HEAD STILL  (C = RECALIBRATE)", 60, 740, 16, RED);
   } else {
-    pxText("TILT LEFT / RIGHT = SELECT   SQUEEZE = RACE   (C = RECALIBRATE)", 40, 540, 14, GREY);
-    pxText("DIR " + currentDirection + "   FSR " + nf(fsr, 0, 0) + "   dY " + nf(diffY, 0, 0) + "  dZ " + nf(diffZ, 0, 0), 40, 556, 12, GREY);
+    Sensor s = sensors[0];
+    pxText("P1 DIR " + s.currentDirection + "  FSR " + nf(s.fsr, 0, 0) + "   (C = RECALIBRATE)", 60, 740, 14, GREY);
   }
 }
 
 void card(int x, int y, int cw, int ch, int i) {
-  noStroke();
   boolean sel = (i == selected);
-  if (sel) y -= 10;
-  fill(#05070C);
-  rect(x + 6, y + 6, cw, ch);              // drop shadow
-  if (sel) { fill(TEAL); rect(x - 4, y - 4, cw + 8, ch + 8); }
+  noStroke();
+  if (sel && focusRow == 1) { fill(WHITE); rect(x - 5, y - 5, cw + 10, ch + 10); }
   fill(PANEL);
   rect(x, y, cw, ch);
   fill(PANEL2);
-  rect(x + 8, y + 8, cw - 16, 150);         // preview window
-  drawIcon(i, x + 8, y + 8, cw - 16, 150);
+  rect(x + 10, y + 10, cw - 20, 170);
+  icon(i, x + 10, y + 10);
 
-  // grid position badge
-  fill(RED);
-  rect(x, y, 56, 30);
-  pxText("P" + (i + 1), x + 10, y + 5, 20, WHITE);
-
-  pxText(names[i].toUpperCase(), x + 16, y + 176, 28, WHITE);
-  pxText(tags[i], x + 16, y + 214, 12, TEAL);
-
-  // key chip
-  fill(BG);
-  rect(x + 16, y + 250, cw - 32, 30);
-  pxText(hints[i], x + 26, y + 257, 14, YEL);
-
-  // press chip
   fill(sel ? RED : PANEL2);
-  rect(x + 16, y + 292, cw - 32, 30);
-  pxText(sel ? "SQUEEZE TO PLAY" : "TILT TO SELECT", x + 26, y + 299, 14, sel ? WHITE : GREY);
+  rect(x, y, 70, 34);
+  pxText("0" + (i + 1), x + 12, y + 5, 22, WHITE);
 
-  // best
-  pxText("BEST", x + 16, y + 342, 12, GREY);
-  pxTextR(nf(best[i], 3), x + cw - 16, y + 334, 24, WHITE);
+  pxText(names[i].toUpperCase(), x + 20, y + 200, 36, WHITE);
+  pxText(hints[i], x + 20, y + 252, 16, GREY);
+
+  fill(sel ? RED : PANEL2);
+  rect(x + 20, y + 290, cw - 40, 40);
+  pxTextC(sel ? "SQUEEZE TO PLAY" : "SELECT", x + cw / 2, y + 301, 18, sel ? WHITE : GREY);
+
+  pxText("BEST", x + 20, y + 354, 14, GREY);
+  pxText("P1 " + best[0][i], x + 20, y + 378, 20, WHITE);
+  pxText("P2 " + best[1][i], x + 200, y + 378, 20, WHITE);
+}
+
+void icon(int i, int x, int y) {
+  pushMatrix();
+  translate(x, y);
+  noStroke();
+  if (i == 0) {
+    for (int k = 0; k < 6; k++) { fill(k % 2 == 0 ? RED : REDD); rect(50 + k * 28, 100, 24, 24); }
+    fill(WHITE); rect(50 + 6 * 28, 100, 24, 24);
+    fill(WHITE); rect(300, 40, 18, 18);
+  } else if (i == 1) {
+    fill(WHITE); ellipse(120, 30 + (frameCount / 4) % 60, 22, 22);
+    ellipse(260, 50 + (frameCount / 5) % 50, 22, 22);
+    fill(WHITE); rect(150, 140, 100, 12);
+    fill(RED); rect(150, 140, 26, 12); rect(224, 140, 26, 12);
+  } else {
+    for (int k = 0; k < 4; k++) { fill(k % 2 == 0 ? RED : WHITE); rect(280, k * 22, 40, 22); }
+    for (int k = 0; k < 3; k++) { fill(k % 2 == 0 ? WHITE : RED); rect(280, 110 + k * 22, 40, 22); }
+    fill(WHITE); ellipse(100, 85 + sin(frameCount * 0.1) * 14, 24, 24);
+  }
+  popMatrix();
 }

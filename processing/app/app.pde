@@ -1,5 +1,5 @@
 
-String[] labels = {"GAME1", "GAME2", "PAINT", "GAME3"};
+String[] labels = {"CATCH", "GAME2", "PAINT", "GAME3"};
 int selected = 0;
 
 final int w1 = 0;
@@ -10,6 +10,14 @@ final int w5 = 4;
 
 int activeWindow = 0;
 int prevMove = 0;
+
+// catch game window + exit-by-FSR-hold (no keyboard needed)
+int mx = 450, my = 250, mw = 600, mh = 400;
+boolean fsrLock = false;
+int fsrHeld = 0;
+int lastDirSent = 0;
+int lastCtl = 0;
+final int EXIT_HOLD_MS = 1500;
 
 
 void setup() {
@@ -84,8 +92,12 @@ void draw() {
     }
     
     println("home: fsr: " + fsr);
-    if(fsr > 200){
+    if(fsr <= 200) fsrLock = false;
+    if(fsr > 200 && !fsrLock){
       activeWindow = selected+1;
+      fsrLock = true;
+      fsrHeld = 0;
+      if(activeWindow == 1) catchStart();
     }
     
   }else if(activeWindow == 1){ // GAME 1
@@ -95,10 +107,25 @@ void draw() {
     fill(0);
     textAlign(LEFT, TOP);
     textSize(32);
-    text("Game 1", 120, 30);
+    text("Catch", 120, 30);
     stroke(0);
     strokeWeight(2);
     line(40, 70, 210, 70);
+
+    catchControls();
+    fill(255);
+    stroke(0);
+    strokeWeight(2);
+    rect(mx, my, mw, mh);
+    pushMatrix();
+    translate(mx, my);
+    textAlign(LEFT, BASELINE);
+    catchDraw();
+    popMatrix();
+    textAlign(CENTER, CENTER);
+    textSize(16);
+    fill(180);
+    text("Tilt left / right to move  |  hold squeeze to exit", width / 2, my + mh + 30);
     
   }else if(activeWindow == 2){ // GAME 2
     
@@ -159,5 +186,25 @@ void keyPressed() {
     sumY = 0;
     sumZ = 0;
     currentDirection = NEUTRAL;
+  }
+}
+
+// head direction -> catch moves; hold FSR to go home
+void catchControls() {
+  if (fsr <= 200) { fsrLock = false; fsrHeld = 0; }
+  else if (!fsrLock) {
+    if (fsrHeld == 0) fsrHeld = millis();
+    if (millis() - fsrHeld > EXIT_HOLD_MS) { activeWindow = 0; fsrLock = true; fsrHeld = 0; return; }
+  }
+  if (!calibrated) return;
+  char k = 0;
+  if (currentDirection == RIGHT) k = 'd';
+  else if (currentDirection == LEFT) k = 'a';
+  else if (currentDirection == UP || currentDirection == DOWN) k = 'x'; // restart only
+  if (k == 0) { lastDirSent = NEUTRAL; return; }
+  if (currentDirection != lastDirSent || millis() - lastCtl > 180) {
+    lastDirSent = currentDirection;
+    lastCtl = millis();
+    catchKey(k);
   }
 }
