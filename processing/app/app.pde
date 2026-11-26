@@ -1,5 +1,5 @@
 
-String[] labels = {"CATCH", "GAME2", "PAINT", "GAME3"};
+String[] labels = {"Brick Braker Game", "Pong game", "Reader", "Catcher"};
 int selected = 0;
 
 final int w1 = 0;
@@ -24,7 +24,6 @@ void setup() {
   size(1500, 850);
   setupSerial();
   
-    
 }
 
 void draw() {
@@ -91,16 +90,37 @@ void draw() {
       }
     }
     
-    println("home: fsr: " + fsr);
-    if(fsr <= 200) fsrLock = false;
-    if(fsr > 200 && !fsrLock){
+    //println("home: fsr: " + fsr);
+    if(fsr <= 150) fsrLock = false;
+    if(fsr > 150 && !fsrLock){
       activeWindow = selected+1;
       fsrLock = true;
       fsrHeld = 0;
-      if(activeWindow == 1) catchStart();
+      if(activeWindow == 1) setupBB();
+      if(activeWindow == 2) setupPong();
+      if(activeWindow == 3) setupReader();
+      if(activeWindow == 4) catchStart();
     }
     
-  }else if(activeWindow == 1){ // GAME 1
+  }else if(activeWindow == 1){ // Brick Braker Game
+  
+    background(255);
+    drawBB();
+    backToHome();
+    
+  }else if(activeWindow == 2){ // Pong game
+    
+    background(255);
+    drawPong();
+    backToHome();
+    
+  }else if(activeWindow == 3){ // Reader
+    
+    background(255);
+    drawReader();
+    //backToHome();
+    
+  }else if(activeWindow == 4){ // Catcher
     
     background(255);
     
@@ -125,40 +145,12 @@ void draw() {
     textAlign(CENTER, CENTER);
     textSize(16);
     fill(180);
-    text("Tilt left / right to move  |  hold squeeze to exit", width / 2, my + mh + 30);
-    
-  }else if(activeWindow == 2){ // GAME 2
-    
-    background(255);
-    
-    fill(0);
-    textAlign(LEFT, TOP);
-    textSize(32);
-    text("Game 2", 120, 30);
-    stroke(0);
-    strokeWeight(2);
-    line(40, 70, 210, 70);
-    
-  }else if(activeWindow == 3){ // PAINT
-    
-    background(255);
+    text("Tilt left / right to move  |  hold squeeze to exit", width / 2, my + mh + 30);background(255);
     
     fill(0);
     textAlign(LEFT, TOP);
     textSize(32);
     text("Paint", 120, 30);
-    stroke(0);
-    strokeWeight(2);
-    line(40, 70, 210, 70);
-    
-  }else if(activeWindow == 4){ // GAME 4
-    
-    background(255);
-    
-    fill(0);
-    textAlign(LEFT, TOP);
-    textSize(32);
-    text("Game 3", 120, 30);
     stroke(0);
     strokeWeight(2);
     line(40, 70, 210, 70);
@@ -189,6 +181,13 @@ void keyPressed() {
   }
 }
 
+void backToHome(){
+  if(spectra > baseSpectra + 20 || spectra < baseSpectra - 20){
+    activeWindow = 0;
+  }
+}
+
+/**/
 // head direction -> catch moves; hold FSR to go home
 void catchControls() {
   if (fsr <= 200) { fsrLock = false; fsrHeld = 0; }

@@ -6,6 +6,7 @@ Serial port;
 // spectra, fsr, x, y, z, c0, c1, c2, c3
 String[] values = new String[10]; // 9 -> 5 are fixed and 4 are variables
 float spectra, fsr, c0, c1, c2, c3;
+float sumSpectra, baseSpectra;
 float x, y, z;
 
 void setupSerial() {
@@ -23,22 +24,24 @@ void serialEvent(Serial p) {
   values = splitTokens(line, ",");
   if (values == null || values.length < 5) return;
   
-  println("values.length: " + values.length);
+  //println("values.length: " + values.length);
   
   spectra = float(values[0]);
   fsr = float(values[1]);
-  println("fsr: " + fsr);
+  //println("fsr: " + fsr);
   
   x = float(values[2]);
   y = float(values[3]);
   z = float(values[4]);
   
   if (!calibrated) {
+    sumSpectra += spectra;
     sumY += y;
     sumZ += z;
     sampleCount++;
 
     if (sampleCount >= TOTAL_SAMPLES) {
+      baseSpectra = sumSpectra / TOTAL_SAMPLES;
       baseY = sumY / TOTAL_SAMPLES;
       baseZ = sumZ / TOTAL_SAMPLES;
       calibrated = true;
